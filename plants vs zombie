@@ -1,0 +1,391 @@
+import arcade as ar
+import time as t
+import random as ra
+
+SCREEN_WIDTH = 1000
+SCREEN_HEIGHT = 600
+SCREEN_TITLE = "Plants VS Zombies"
+
+
+def lawn_x(x):
+    if 250 < x < 325:
+        column = 1
+        center_x = 285
+    elif 325 < x < 400:
+        center_x = 360
+        column = 2
+    elif 400 < x < 475:
+        column = 3
+        center_x = 440
+    elif 475 < x < 550:
+        column = 4
+        center_x = 510
+    elif 550 < x < 625:
+        column = 5
+        center_x = 590
+    elif 640 < x < 715:
+        column = 6
+        center_x = 675
+    elif 715 < x < 785:
+        column = 7
+        center_x = 750
+    elif 775 < x < 850:
+        column = 8
+        center_x = 820
+    elif 850 < x < 925:
+        column = 9
+        center_x = 900
+    return column, center_x
+
+
+def lawn_y(y):
+    if 30 < y < 130:
+        line = 1
+        center_y = 80
+    elif 130 < y < 230:
+        line = 2
+        center_y = 180
+    elif 230 < y < 330:
+        line = 3
+        center_y = 280
+    elif 330 < y < 430:
+        line = 4
+        center_y = 380
+    elif 430 < y < 530:
+        line = 5
+        center_y = 480
+    return line, center_y
+
+
+class MyGame(ar.Window):
+    def __init__(self, width, height, title):
+        super().__init__(width, height, title)
+        self.game = True
+        self.back = ar.load_texture("background.jpg")
+        self.menu = ar.load_texture("menu_vertical.png")
+        self.seed = None
+        self.plants = ar.SpriteList()
+        self.lives = 5
+        self.suns = 500
+        self.lawns = []
+        self.spawn_suns = ar.SpriteList()
+        self.peas = ar.SpriteList()
+        self.zombies = ar.SpriteList()
+        self.zombie_time = t.time()
+        self.play_seed = ar.load_sound("seed.mp3")
+        self.bg_game_over = ar.load_texture("end.png")
+        self.zombies_count = 0
+        self.attack_time = 20
+        self.start_game = ar.load_sound("grasswalk.mp3")
+
+    # начальные значения
+    def setup(self):
+        self.playr = ar.play_sound(self.start_game)
+
+
+
+    # отрисовка
+    def on_draw(self):
+        ar.start_render()
+        ar.draw_texture_rectangle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT, self.back)
+        ar.draw_text(f"count: {self.zombies_count}", 840, 520, ar.color.BLACK, 30)
+        ar.draw_texture_rectangle(60, 300, 130, 600, self.menu)
+        ar.draw_text(f"{self.suns}", 30, 490, ar.color.DARK_GREEN, 30)
+        if self.seed != None:
+            self.seed.draw()
+        self.plants.draw()
+        self.spawn_suns.draw()
+        self.peas.draw()
+        self.zombies.draw()
+        if self.zombies_count >= 20 and len(self.zombies) == 0:
+            self.bg_game_over = ar.load_texture("logo.png")
+            self.game = False
+        if self.game == False:
+            ar.draw_texture_rectangle(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT, self.bg_game_over)
+
+
+    # игровая логика
+    def update(self, delta_time):
+        if self.game == True:
+            self.plants.update()
+            self.plants.update_animation()
+            self.spawn_suns.update()
+            self.peas.update()
+            self.zombies.update()
+            self.zombies.update_animation()
+
+            if t.time() - self.zombie_time >= self.attack_time and self.zombies_count < 20:
+                line, center_y = lawn_y(ra.randint(30, 525))
+                chance = ra.randint(0, 10)
+                if 0 <= chance <= 7:
+                    zombie = BasicZombie(line, center_y)
+                elif 7 < chance <= 9:
+                    zombie = ConHeadZombie(line, center_y)
+                else:
+                    zombie = BuckHeadZombie(line, center_y)
+
+                self.zombies.append(zombie)
+                self.zombie_time = t.time()
+        else:
+            self.playr.delete()
+
+
+
+    # нажатить кнопку мыши
+    def on_mouse_press(self, x, y, button, modifiers):
+        if self.game == True:
+            check_x = 10 < x < 105
+            if check_x and 25 < y < 135:
+                self.seed = Torchwood()
+            if check_x and 140 < y < 250:
+                self.seed = Wallnut()
+            if check_x and 255 < y < 365:
+                self.seed = Peashooter()
+            if check_x and 370 < y < 480:
+                self.seed = Sunflower()
+            if self.seed != None:
+                self.seed.center_y = y
+                self.seed.center_x = x
+                self.seed.alpha = 150
+                ar.play_sound(self.play_seed)
+            for sun in self.spawn_suns:
+                if sun.left < x < sun.right and sun.bottom < y < sun.top:
+                    sun.kill()
+                    self.suns += 25
+
+    # движение мыши
+    def on_mouse_motion(self, x, y, dx, dy):
+        if self.seed != None:
+            self.seed.center_x = x
+            self.seed.center_y = y
+
+    # отпустить кнопку мыши
+    def on_mouse_release(self, x, y, button, modifiers):
+        if self.seed != None and 250 < x < 960 and 55 < y < 525:
+            column, center_x = lawn_x(x)
+            line, center_y = lawn_y(y)
+            if (line, column) not in self.lawns and self.suns >= self.seed.cost:
+                self.seed.planting(line, column, center_x, center_y)
+                self.seed.alpha = 255
+                self.plants.append(self.seed)
+                self.suns -= self.seed.cost
+                self.seed = None
+                self.lawns.append((line, column))
+                ar.play_sound(self.play_seed)
+        elif self.seed != None and 0 < x < 130:
+            self.seed = None
+
+
+
+
+class Plant(ar.AnimatedTimeSprite):
+    def __init__(self, health, cost):
+        super().__init__(0.12)
+        self.cost = cost
+        self.health = health
+        self.line = 0
+        self.column = 0
+
+    def update(self):
+        if self.health <= 0:
+            self.kill()
+            window.lawns.remove((self.line, self.column))
+
+
+    def planting(self, line, column, center_x, center_y):
+        self.line = line
+        self.column = column
+        self.center_x = center_x
+        self.center_y = center_y
+
+
+class Sunflower(Plant):
+    def __init__(self):
+        super().__init__(90, 50)
+        self.texture = ar.load_texture("sun1.png")
+        self.price = 50
+        for i in range(3):
+            self.textures.append(ar.load_texture("sun1.png"))
+        for r in range(3):
+            self.textures.append(ar.load_texture("sun2.png"))
+        self.counter = t.time()
+
+    def update(self):
+        super().update()
+        if t.time() - self.counter >= 15:
+            self.counter = t.time()
+            sun = Sun(self.center_x, self.center_y)
+            window.spawn_suns.append(sun)
+            ar.play_sound(sun.sun_mus)
+
+
+class Peashooter(Plant):
+    def __init__(self):
+        super().__init__(100, 100)
+        self.texture = ar.load_texture("pea1.png")
+        self.price = 100
+        for i in range(3):
+            self.textures.append(ar.load_texture("pea1.png"))
+        for r in range(3):
+            self.textures.append(ar.load_texture('pea2.png'))
+        for d in range(3):
+            self.textures.append(ar.load_texture("pea3.png"))
+        self.counter = t.time()
+
+
+    def update(self):
+        super().update()
+        zombie_in_line = False
+        for zombie in window.zombies:
+            if zombie.line == self.line:
+                zombie_in_line = True
+        if t.time() - self.counter >= 2 and zombie_in_line == True:
+            self.counter = t.time()
+            pea = Pea(self.center_x+15, self.center_y+15)
+            window.peas.append(pea)
+            ar.play_sound(pea.wa)
+
+
+class Wallnut(Plant):
+    def __init__(self):
+        super().__init__(200, 50)
+        self.texture = ar.load_texture("nut1.png")
+        self.price = 50
+        for i in range(3):
+            self.textures.append(ar.load_texture("nut1.png"))
+        for r in range(3):
+            self.textures.append(ar.load_texture("nut2.png"))
+        for d in range(3):
+            self.textures.append(ar.load_texture("nut3.png"))
+
+
+class Torchwood(Plant):
+    def __init__(self):
+        super().__init__(120, 175)
+        self.texture = ar.load_texture("tree1.png")
+        self.price = 125
+        for i in range(3):
+            self.textures.append(ar.load_texture("tree1.png"))
+        for r in range(3):
+            self.textures.append(ar.load_texture("tree2.png"))
+        for d in range(3):
+            self.textures.append(ar.load_texture("tree3.png"))
+
+    def update(self):
+        super().update()
+        fire_peas = ar.check_for_collision_with_list(self, window.peas)
+        if len(fire_peas) > 0:
+            for i in fire_peas:
+                i.texture = ar.load_texture("firebul.png")
+                i.damage = 3
+
+
+# --------------------------------------------------------------------------------------------------
+class Sun(ar.Sprite):
+    def __init__(self, x, y):
+        super().__init__("sun.png", 0.1)
+        self.center_x = x + 35
+        self.center_y = y - 10
+        self.sun_mus = ar.load_sound("sunspawn.mp3")
+        self.angle = 0
+        self.counter = t.time()
+
+    def update(self):
+        self.angle += 1
+        super().update()
+        if t.time() - self.counter >= 5:
+            self.counter = t.time()
+            self.kill()
+
+class Pea(ar.Sprite):
+    def __init__(self, x, y):
+        super().__init__("bul.png", 0.1)
+        self.center_x = x
+        self.center_y = y
+        self.damage = 1
+        self.change_x = 7
+        self.hit = ar.load_sound("hit.mp3")
+        self.wa = ar.load_sound("peaspawn.mp3")
+
+    def update(self):
+        self.center_x += self.change_x
+        if self.right >= SCREEN_WIDTH:
+            self.kill()
+        heats = ar.check_for_collision_with_list(self, window.zombies)
+        if len(heats) > 0:
+            for zombie in heats:
+                zombie.health -= self.damage
+                ar.play_sound(self.hit)
+                self.kill()
+
+
+
+
+class Zombie(ar.AnimatedTimeSprite):
+    def __init__(self, health, line, y):
+        super().__init__(0.1)
+        self.line = line
+        self.health = health
+        self.center_x = SCREEN_WIDTH + 10
+        self.change_x = 0.00001
+        self.center_y = y
+
+    def update(self):
+        self.center_x -= self.change_x
+        eating = False
+        food = ar.check_for_collision_with_list(self, window.plants)
+        if len(food) > 0:
+            for i in food:
+                if self.line == i.line:
+                    eating = True
+                    i.health -= 0.5
+        if eating == True:
+            self.change_x = 0
+            self.angle = 15
+        else:
+            self.change_x = 0.5
+            self.angle = 0
+        if self.health <= 0:
+            self.kill()
+            window.zombies_count += 1
+            window.attack_time -= 1
+        if self.center_x < 200:
+            window.game = False
+
+class BasicZombie(Zombie):
+    def __init__(self, line, y):
+        super().__init__(12, line, y)
+        self.texture = ar.load_texture("zom1.png")
+        for i in range(2):
+            self.textures.append(ar.load_texture("zom1.png"))
+        for r in range(2):
+            self.textures.append(ar.load_texture("zom2.png"))
+
+
+
+class ConHeadZombie(Zombie):
+    def __init__(self, line, y):
+        super().__init__(20, line, y)
+        self.texture = ar.load_texture("cone1.png")
+        for i in range(1):
+            self.textures.append(ar.load_texture("cone1.png"))
+        for r in range(1):
+            self.textures.append(ar.load_texture("cone2.png"))
+
+
+class BuckHeadZombie(Zombie):
+    def __init__(self, line, y):
+        super().__init__(30, line, y)
+        self.texture = ar.load_texture("buck1.png")
+        for i in range(1):
+            self.textures.append(ar.load_texture("buck1.png"))
+        for r in range(1):
+            self.textures.append(ar.load_texture("buck2.png"))
+
+
+
+
+
+window = MyGame(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
+window.setup()
+ar.run()
